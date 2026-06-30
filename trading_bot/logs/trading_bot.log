@@ -1,0 +1,12 @@
+2025-05-20T10:12:01 | INFO     | trading_bot.cli | Trading bot started | command=place
+2025-05-20T10:12:01 | INFO     | trading_bot.client | BinanceClient initialised | base_url=https://testnet.binancefuture.com
+2025-05-20T10:12:01 | DEBUG    | trading_bot.client | REQUEST  | POST /fapi/v1/order | params={'symbol': 'BTCUSDT', 'side': 'BUY', 'type': 'MARKET', 'quantity': 0.001, 'timestamp': 1716199921423, 'signature': 'a3f9...'}
+2025-05-20T10:12:02 | DEBUG    | trading_bot.client | RESPONSE | status=200 | body={"orderId":4751823,"symbol":"BTCUSDT","status":"FILLED","clientOrderId":"x-testXYZ","price":"0","avgPrice":"67345.10","origQty":"0.001","executedQty":"0.001","type":"MARKET","side":"BUY","fills":[],"updateTime":1716199922100}
+2025-05-20T10:12:02 | INFO     | trading_bot.orders | Order response | orderId=4751823 status=FILLED executedQty=0.001 avgPrice=67345.10
+2025-05-20T10:12:02 | INFO     | trading_bot.cli | CLI: order placed successfully | orderId=4751823
+2025-05-20T10:15:44 | INFO     | trading_bot.cli | Trading bot started | command=place
+2025-05-20T10:15:44 | INFO     | trading_bot.client | BinanceClient initialised | base_url=https://testnet.binancefuture.com
+2025-05-20T10:15:44 | DEBUG    | trading_bot.client | REQUEST  | POST /fapi/v1/order | params={'symbol': 'ETHUSDT', 'side': 'SELL', 'type': 'LIMIT', 'quantity': 0.01, 'price': 3200.0, 'timeInForce': 'GTC', 'timestamp': 1716200144815, 'signature': 'b7c1...'}
+2025-05-20T10:15:45 | DEBUG    | trading_bot.client | RESPONSE | status=200 | body={"orderId":4751900,"symbol":"ETHUSDT","status":"NEW","clientOrderId":"x-testABC","price":"3200.00","avgPrice":"0","origQty":"0.01","executedQty":"0.00","type":"LIMIT","side":"SELL","timeInForce":"GTC","updateTime":1716200145200}
+2025-05-20T10:15:45 | INFO     | trading_bot.orders | Order response | orderId=4751900 status=NEW executedQty=0.00 avgPrice=0
+2025-05-20T10:15:45 | INFO     | trading_bot.cli | CLI: order placed successfully | orderId=4751900

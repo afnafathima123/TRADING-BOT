@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSI Trading Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/4.1.1/lightweight-charts.standalone.production.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap');
+
+  :root {
+    --bg:        #080c10;
+    --bg2:       #0d1117;
+    --bg3:       #111820;
+    --border:    #1e2d3d;
+    --accent:    #00d4ff;
+    --green:     #00ff87;
+    --red:       #ff3b5c;
+    --yellow:    #ffd700;
+    --muted:     #4a6278;
+    --text:      #c9d1d9;
+    --text-dim:  #586069;
+    --buy-bg:    rgba(0,255,135,0.08);
+    --sell-bg:   rgba(255,59,92,0.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 28px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 18px;
+    color: var(--accent);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .logo span { color: var(--text-dim); }
+
+  .header-right {
+    display: flex; align-items: center; gap: 20px;
+  }
+
+  .live-badge {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--green); letter-spacing: 1px;
+  }
+
+  .live-dot {
+    width: 7px; height: 7px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse 1.4s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  #symbol-label {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px; font-weight: 700;
+    color: var(--accent);
+  }
+
+  /* ── Layout ── */
+  .grid {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    grid-template-rows: auto 1fr auto;
+    gap: 1px;
+    background: var(--border);
+    height: calc(100vh - 53px);
+  }
+
+  .panel {
+    background: var(--bg2);
+    padding: 20px;
+    overflow: hidden;
+  }
+
+  .panel-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+
+  /* ── Left sidebar ── */
+  .sidebar {
+    grid-row: 1 / 4;
+    display: flex; flex-direction: column; gap: 1px;
+    background: var(--border);
+  }
+
+  /* ── Price panel ── */
+  .price-panel {
+    background: var(--bg2);
+    padding: 20px;
+  }
+
+  #price-main {
+    font-family: 'Syne', sans-serif;
+    font-size: 36px;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1;
+    transition: color 0.3s;
+  }
+
+  #price-change {
+    font-size: 13px;
+    margin-top: 6px;
+    transition: color 0.3s;
+  }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+
+  .stat { display: flex; flex-direction: column; gap: 3px; }
+  .stat-key { font-size: 9px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; }
+  .stat-val { font-size: 13px; font-weight: 700; color: var(--text); }
+
+  /* ── RSI panel ── */
+  .rsi-panel { background: var(--bg2); padding: 20px; }
+
+  #rsi-value {
+    font-family: 'Syne', sans-serif;
+    font-size: 52px;
+    font-weight: 800;
+    line-height: 1;
+    transition: color 0.4s;
+  }
+
+  .rsi-bar-wrap {
+    margin-top: 14px;
+    position: relative;
+    height: 8px;
+    background: var(--bg3);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  #rsi-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.6s ease, background 0.4s;
+    width: 50%;
+    background: var(--yellow);
+  }
+
+  .rsi-zones {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  #rsi-zone-label {
+    margin-top: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  /* ── Signal panel ── */
+  .signal-panel { background: var(--bg2); padding: 20px; }
+
+  #signal-box {
+    margin-top: 8px;
+    padding: 16px;
+    border-radius: 4px;
+    text-align: center;
+    border: 1px solid var(--border);
+    transition: all 0.4s;
+  }
+
+  #signal-text {
+    font-family: 'Syne', sans-serif;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 4px;
+  }
+
+  #signal-desc {
+    font-size: 10px;
+    letter-spacing: 1px;
+    margin-top: 4px;
+    color: var(--muted);
+  }
+
+  /* ── P&L panel ── */
+  .pnl-panel { background: var(--bg2); padding: 20px; flex: 1; }
+
+  .pnl-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .pnl-key { color: var(--muted); font-size: 11px; letter-spacing: 1px; }
+  .pnl-val { font-weight: 700; }
+
+  #pnl-value { font-size: 18px; font-family: 'Syne', sans-serif; }
+
+  /* ── Main chart ── */
+  .chart-area {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    background: var(--bg2);
+    position: relative;
+    overflow: hidden;
+  }
+
+  #chart-container {
+    width: 100%;
+    height: calc(100% - 44px);
+  }
+
+  .chart-header {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  .chart-header span { color: var(--text); }
+
+  /* ── Order panel ── */
+  .order-panel {
+    grid-column: 2;
+    grid-row: 3;
+    background: var(--bg2);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  .order-panel label { font-size: 10px; color: var(--muted); letter-spacing: 1px; display: block; margin-bottom: 4px; }
+
+  .order-panel input, .order-panel select {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    padding: 7px 10px;
+    border-radius: 3px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .order-panel input:focus, .order-panel select:focus {
+    border-color: var(--accent);
+  }
+
+  .field { flex: 1; }
+
+  .btn {
+    padding: 8px 24px;
+    border: none;
+    border-radius: 3px;
+    font-family: 'Syne', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    white-space: nowrap;
+    margin-top: 18px;
+  }
+
+  .btn:hover { opacity: 0.85; }
+  .btn:active { transform: scale(0.97); }
+
+  .btn-buy  { background: var(--green); color: #000; }
+  .btn-sell { background: var(--red);   color: #fff; }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed;
+    bottom: 80px; right: 24px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    padding: 12px 18px;
+    border-radius: 4px;
+    font-size: 12px;
+    max-width: 320px;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.3s;
+    pointer-events: none;
+    z-index: 200;
+  }
+
+  #toast.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── Colours ── */
+  .c-green  { color: var(--green); }
+  .c-red    { color: var(--red); }
+  .c-yellow { color: var(--yellow); }
+  .c-accent { color: var(--accent); }
+  .c-muted  { color: var(--muted); }
+
+  /* ── Connection status ── */
+  #conn-status { font-size: 10px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="logo">RSI<span>/</span>BOT &nbsp;⚡</div>
+  <div style="display:flex;align-items:center;gap:24px">
+    <span id="symbol-label">BTCUSDT</span>
+    <div class="live-badge"><div class="live-dot"></div> LIVE</div>
+    <span id="conn-status">connecting…</span>
+  </div>
+</header>
+
+<!-- Main Grid -->
+<div class="grid">
+
+  <!-- Left Sidebar -->
+  <div class="sidebar">
+
+    <!-- Price -->
+    <div class="price-panel">
+      <div class="panel-label">Last Price</div>
+      <div id="price-main">—</div>
+      <div id="price-change" class="c-muted">—</div>
+      <div class="stat-row">
+        <div class="stat">
+          <div class="stat-key">24h High</div>
+          <div class="stat-val c-green" id="high-val">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-key">24h Low</div>
+          <div class="stat-val c-red" id="low-val">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-key">Volume</div>
+          <div class="stat-val" id="vol-val">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RSI -->
+    <div class="rsi-panel">
+      <div class="panel-label">RSI (14)</div>
+      <div id="rsi-value" class="c-yellow">—</div>
+      <div class="rsi-bar-wrap"><div id="rsi-fill"></div></div>
+      <div class="rsi-zones"><span>0 — OVERSOLD (30)</span><span>(70) OVERBOUGHT — 100</span></div>
+      <div id="rsi-zone-label" class="c-muted">Neutral</div>
+    </div>
+
+    <!-- Signal -->
+    <div class="signal-panel">
+      <div class="panel-label">Signal</div>
+      <div id="signal-box">
+        <div id="signal-text">HOLD</div>
+        <div id="signal-desc">RSI in neutral zone</div>
+      </div>
+    </div>
+
+    <!-- P&L -->
+    <div class="pnl-panel">
+      <div class="panel-label">Paper P&amp;L</div>
+      <div class="pnl-row">
+        <span class="pnl-key">Total P&amp;L</span>
+        <span class="pnl-val" id="pnl-value">0.0000</span>
+      </div>
+      <div class="pnl-row">
+        <span class="pnl-key">Position</span>
+        <span class="pnl-val" id="pos-value">NONE</span>
+      </div>
+      <div class="pnl-row">
+        <span class="pnl-key">Trades</span>
+        <span class="pnl-val" id="trades-value">0</span>
+      </div>
+      <div class="pnl-row" style="border:none">
+        <span class="pnl-key">Last update</span>
+        <span class="pnl-val c-muted" id="time-value">—</span>
+      </div>
+    </div>
+
+  </div><!-- /sidebar -->
+
+  <!-- Chart Area -->
+  <div class="chart-area">
+    <div class="chart-header">
+      CANDLESTICK &nbsp;·&nbsp; <span id="chart-interval">1m</span>
+      &nbsp;·&nbsp; Binance Futures Testnet
+    </div>
+    <div id="chart-container"></div>
+  </div>
+
+  <!-- Order Bar -->
+  <div class="order-panel">
+    <div class="field">
+      <label>SYMBOL</label>
+      <input id="o-symbol" value="BTCUSDT">
+    </div>
+    <div class="field">
+      <label>TYPE</label>
+      <select id="o-type">
+        <option>MARKET</option>
+        <option>LIMIT</option>
+        <option>STOP_LIMIT</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>QUANTITY</label>
+      <input id="o-qty" type="number" value="0.001" step="0.001">
+    </div>
+    <div class="field" id="price-field">
+      <label>PRICE</label>
+      <input id="o-price" type="number" placeholder="required for LIMIT">
+    </div>
+    <div class="field">
+      <label>API KEY</label>
+      <input id="o-key" type="password" placeholder="testnet key">
+    </div>
+    <div class="field">
+      <label>API SECRET</label>
+      <input id="o-secret" type="password" placeholder="testnet secret">
+    </div>
+    <button class="btn btn-buy"  onclick="submitOrder('BUY')">▲ BUY</button>
+    <button class="btn btn-sell" onclick="submitOrder('SELL')">▼ SELL</button>
+  </div>
+
+</div><!-- /grid -->
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ── Chart setup ───────────────────────────────────────────────────────
+const chartEl = document.getElementById('chart-container');
+const chart = LightweightCharts.createChart(chartEl, {
+  layout: { background: { color: '#0d1117' }, textColor: '#586069' },
+  grid: { vertLines: { color: '#1e2d3d' }, horzLines: { color: '#1e2d3d' } },
+  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  rightPriceScale: { borderColor: '#1e2d3d' },
+  timeScale: { borderColor: '#1e2d3d', timeVisible: true },
+  width: chartEl.clientWidth,
+  height: chartEl.clientHeight,
+});
+
+const candleSeries = chart.addCandlestickSeries({
+  upColor: '#00ff87', downColor: '#ff3b5c',
+  borderUpColor: '#00ff87', borderDownColor: '#ff3b5c',
+  wickUpColor: '#00ff87', wickDownColor: '#ff3b5c',
+});
+
+window.addEventListener('resize', () => {
+  chart.applyOptions({ width: chartEl.clientWidth, height: chartEl.clientHeight });
+});
+
+// ── SocketIO ──────────────────────────────────────────────────────────
+const socket = io();
+const connEl = document.getElementById('conn-status');
+
+socket.on('connect',    () => { connEl.textContent = '● connected'; connEl.style.color = '#00ff87'; });
+socket.on('disconnect', () => { connEl.textContent = '○ disconnected'; connEl.style.color = '#ff3b5c'; });
+
+socket.on('tick', snap => {
+  updatePrice(snap);
+  updateRSI(snap);
+  updateSignal(snap);
+  updatePnL(snap);
+  updateChart(snap);
+  document.getElementById('symbol-label').textContent = snap.symbol;
+});
+
+// ── UI updaters ───────────────────────────────────────────────────────
+let prevPrice = null;
+
+function updatePrice(snap) {
+  const el = document.getElementById('price-main');
+  const chEl = document.getElementById('price-change');
+  const p = snap.price;
+  const pct = snap.change_pct;
+
+  el.textContent = '$' + p.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  if (prevPrice !== null) {
+    el.style.color = p > prevPrice ? 'var(--green)' : p < prevPrice ? 'var(--red)' : 'var(--text)';
+    setTimeout(() => { el.style.color = 'var(--text)'; }, 600);
+  }
+  prevPrice = p;
+
+  const sign = pct >= 0 ? '+' : '';
+  chEl.textContent = `${sign}${pct.toFixed(2)}%  24h`;
+  chEl.className = pct >= 0 ? 'c-green' : 'c-red';
+
+  document.getElementById('high-val').textContent = snap.high_24h.toLocaleString();
+  document.getElementById('low-val').textContent  = snap.low_24h.toLocaleString();
+  document.getElementById('vol-val').textContent  = (snap.volume/1000).toFixed(1) + 'K';
+}
+
+function updateRSI(snap) {
+  const rsi = snap.rsi;
+  const rsiEl = document.getElementById('rsi-value');
+  const fillEl = document.getElementById('rsi-fill');
+  const zoneEl = document.getElementById('rsi-zone-label');
+
+  if (rsi === null || rsi === undefined) {
+    rsiEl.textContent = '…';
+    return;
+  }
+
+  rsiEl.textContent = rsi.toFixed(1);
+  fillEl.style.width = rsi + '%';
+
+  if (rsi <= 30) {
+    rsiEl.className = 'c-green';
+    fillEl.style.background = 'var(--green)';
+    zoneEl.textContent = '⬇ OVERSOLD — BUY ZONE';
+    zoneEl.className = 'c-green';
+  } else if (rsi >= 70) {
+    rsiEl.className = 'c-red';
+    fillEl.style.background = 'var(--red)';
+    zoneEl.textContent = '⬆ OVERBOUGHT — SELL ZONE';
+    zoneEl.className = 'c-red';
+  } else {
+    rsiEl.className = 'c-yellow';
+    fillEl.style.background = 'var(--yellow)';
+    zoneEl.textContent = '→ NEUTRAL';
+    zoneEl.className = 'c-yellow';
+  }
+}
+
+const signalMeta = {
+  BUY:  { bg: 'var(--buy-bg)',  border: 'var(--green)', color: 'var(--green)', desc: 'RSI ≤ 30 — Oversold, consider buying' },
+  SELL: { bg: 'var(--sell-bg)', border: 'var(--red)',   color: 'var(--red)',   desc: 'RSI ≥ 70 — Overbought, consider selling' },
+  HOLD: { bg: 'transparent',    border: 'var(--border)', color: 'var(--muted)', desc: 'RSI in neutral zone (30–70)' },
+};
+
+function updateSignal(snap) {
+  const sig = snap.signal || 'HOLD';
+  const meta = signalMeta[sig];
+  const box  = document.getElementById('signal-box');
+  const txt  = document.getElementById('signal-text');
+  const desc = document.getElementById('signal-desc');
+
+  box.style.background   = meta.bg;
+  box.style.borderColor  = meta.border;
+  txt.style.color        = meta.color;
+  txt.textContent        = sig;
+  desc.textContent       = meta.desc;
+}
+
+function updatePnL(snap) {
+  const pnl = snap.pnl ?? 0;
+  const pnlEl = document.getElementById('pnl-value');
+  pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(4) + ' USDT';
+  pnlEl.className   = 'pnl-val ' + (pnl >= 0 ? 'c-green' : 'c-red');
+
+  const posEl = document.getElementById('pos-value');
+  posEl.textContent = snap.position || 'NONE';
+  posEl.className   = 'pnl-val ' + (snap.position === 'LONG' ? 'c-green' : 'c-muted');
+
+  document.getElementById('trades-value').textContent = snap.trade_count ?? 0;
+
+  const ts = new Date(snap.timestamp);
+  document.getElementById('time-value').textContent =
+    ts.toLocaleTimeString('en-US', { hour12: false });
+}
+
+// ── Chart update ──────────────────────────────────────────────────────
+function updateChart(snap) {
+  if (!snap.candles) return;
+  const candles = snap.candles.map(c => ({
+    time:  Math.floor(c.open_time / 1000),
+    open:  c.open,
+    high:  c.high,
+    low:   c.low,
+    close: c.close,
+  }));
+  candleSeries.setData(candles);
+}
+
+// ── Order submission ──────────────────────────────────────────────────
+async function submitOrder(side) {
+  const type     = document.getElementById('o-type').value;
+  const symbol   = document.getElementById('o-symbol').value.trim();
+  const quantity = parseFloat(document.getElementById('o-qty').value);
+  const price    = parseFloat(document.getElementById('o-price').value) || undefined;
+  const api_key  = document.getElementById('o-key').value.trim();
+  const api_secret = document.getElementById('o-secret').value.trim();
+
+  const body = { symbol, side, type, quantity, price, api_key, api_secret };
+
+  try {
+    const res = await fetch('/api/order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`✅ ${side} order placed — ID: ${data.orderId} | Status: ${data.status}`, 'green');
+    } else {
+      showToast(`❌ ${data.error}`, 'red');
+    }
+  } catch (err) {
+    showToast('❌ Network error: ' + err.message, 'red');
+  }
+}
+
+function showToast(msg, color = 'accent') {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.style.borderLeftColor = color === 'green' ? 'var(--green)' : color === 'red' ? 'var(--red)' : 'var(--accent)';
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 4000);
+}
+
+// Toggle price field visibility
+document.getElementById('o-type').addEventListener('change', e => {
+  document.getElementById('price-field').style.opacity =
+    e.target.value === 'MARKET' ? '0.4' : '1';
+});
+</script>
+</body>
+</html>
